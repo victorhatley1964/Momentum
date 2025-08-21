@@ -3,3 +3,5 @@ yfinance
 pandas
 numpy
 alpaca-trade-api
+urllib3==2.2.2
+requests==2.32.3
