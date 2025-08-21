@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 from alpaca_trade_api.rest import REST
-from alpaca_trade_api.stream import Stream
+from alpaca.data.live import StockDataStream
 import asyncio
 import threading
 
