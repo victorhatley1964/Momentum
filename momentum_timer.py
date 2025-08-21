@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 from alpaca_trade_api.rest import REST
-from alpaca.data.live import StockDataStream
+# from alpaca.data.live import StockDataStream
 import asyncio
 import threading
 
@@ -110,23 +110,23 @@ if use_trading and api_key and api_secret:
                 st.write(f"✅ Buy order with bracket placed: {shares} shares of {etf}")
 
         # Stream live quotes
-        st.subheader("📡 Real-Time Streaming Quotes")
-        live_quotes = {}
+        # st.subheader("📡 Real-Time Streaming Quotes")
+        # live_quotes = {}
 
-        def on_quote(q):
-            live_quotes[q.symbol] = q.bid_price
+        # def on_quote(q):
+          #  live_quotes[q.symbol] = q.bid_price
 
-        async def run_stream():
-            stream = Stream(api_key, api_secret, base_url=endpoint_url, data_feed='iex')
-            for symbol in top_etfs:
-                stream.subscribe_quotes(on_quote, symbol)
-            await stream.run()
+        #async def run_stream():
+         #   stream = Stream(api_key, api_secret, base_url=endpoint_url, data_feed='iex')
+         #  for symbol in top_etfs:
+         #       stream.subscribe_quotes(on_quote, symbol)
+         #   await stream.run()
 
-        def start_streaming():
-            asyncio.run(run_stream())
+        # def start_streaming():
+            # asyncio.run(run_stream())
 
-        thread = threading.Thread(target=start_streaming)
-        thread.start()
+        # thread = threading.Thread(target=start_streaming)
+        # thread.start()
 
     except Exception as e:
         st.error(f"Trading error: {e}")
