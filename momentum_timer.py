@@ -1,177 +1,124 @@
 import streamlit as st
 import yfinance as yf
 import pandas as pd
-from datetime import datetime
+import datetime
+import math
 import numpy as np
 
-# Note: Alpaca imports are commented out for local testing without credentials.
-# from alpaca_trade_api.rest import REST
-# from alpaca.data.live import StockDataStream
-# import asyncio
-# import threading
+# Set the title and a short description for the app
+st.title("Momentum Timer")
+st.markdown("This application calculates momentum for a list of stocks to help with trading decisions.")
 
-# --- Page Configuration ---
-st.set_page_config(page_title="Momentum Timer", layout="wide")
-
-st.title("📈 Momentum Timer - ETF Ranking Tool with Backtesting and Trading")
-
-# --- Global Settings & Assets ---
-ETFS = [
-    "SPY", "QQQ", "IWM", "DIA", "EFA",
-    "EEM", "VNQ", "GLD", "SLV", "DBC",
-    "XLK", "XLF", "XLE", "XLV", "XLY",
-    "XLI", "XLB", "XLU", "TLT", "IEF"
-]
-
-# --- Core Functions ---
-@st.cache_data(show_spinner="Fetching historical data from Yahoo Finance...")
-def get_historical_data(tickers, period):
+def get_momentum_data(tickers, period, progress_bar):
     """
-    Fetches and caches historical stock data for a given list of tickers
-    and a time period.
+    Fetches historical stock data for a list of tickers, handling potential errors.
+
+    Args:
+        tickers (list): A list of stock ticker symbols.
+        period (str): The time period for historical data (e.g., '1y', '6mo').
+        progress_bar: A Streamlit progress bar object for visual feedback.
+
+    Returns:
+        pandas.DataFrame: A DataFrame containing the 'Adj Close' prices for all tickers,
+                          or an empty DataFrame if data fetching fails.
     """
     try:
-        data = yf.download(tickers, period=period, progress=False)['Adj Close']
-        return data.dropna()
-    except Exception as e:
-        st.error(f"Error fetching data: {e}")
-        return pd.DataFrame() # Return an empty DataFrame on error
+        # Download data for the list of tickers
+        data = yf.download(tickers, period=period, progress=False)
 
-def calculate_momentum(df, lookback):
-    """
-    Calculates momentum based on a lookback period by comparing the
-    latest price to the price 'lookback' days ago.
-    """
-    # The .shift() function is used to get the price from 'lookback' days ago.
-    # The result is a DataFrame where each value is the percentage change.
-    return (df / df.shift(lookback) - 1).dropna()
-
-def display_momentum_analysis(momentum_df, lookback_days, display_count):
-    """
-    Displays the momentum table and bar chart for the top ETFs.
-    """
-    st.subheader(f"Top {display_count} ETFs by {lookback_days}-Day Momentum")
-    st.dataframe(momentum_df.head(display_count), use_container_width=True)
-
-    st.subheader("Momentum Bar Chart")
-    st.bar_chart(momentum_df.set_index('ETF').head(display_count))
-
-def display_backtest_chart(data, top_etfs):
-    """
-    Displays a cumulative returns line chart for a list of top ETFs.
-    """
-    st.subheader("Backtest Cumulative Returns of Top ETFs")
-    
-    # Calculate daily percentage change and then cumulative product
-    backtest_data = data[top_etfs].pct_change().dropna()
-    
-    if not backtest_data.empty:
-        cum_returns = (1 + backtest_data).cumprod()
-        st.line_chart(cum_returns)
-    else:
-        st.info("Not enough data to perform backtesting for the top ETFs.")
-
-
-# --- Sidebar UI Controls ---
-st.sidebar.header("Settings")
-lookback_days = st.sidebar.slider("Lookback Period (Days)", 5, 90, 21)
-display_count = st.sidebar.slider("Top N Assets to Display", 5, 20, 10)
-backtest_period = st.sidebar.selectbox("Backtest Period", ["3mo", "6mo", "1y", "2y"], index=2)
-
-# Alpaca API Credentials
-st.sidebar.header("Alpaca Trading")
-use_trading = st.sidebar.checkbox("Enable Live Trading (Paper Account Recommended)")
-api_key = st.sidebar.text_input("Alpaca API Key", type="password")
-api_secret = st.sidebar.text_input("Alpaca Secret Key", type="password")
-endpoint_url = "https://paper-api.alpaca.markets"
-
-# Risk Management
-st.sidebar.header("Risk Management")
-stop_loss_pct = st.sidebar.slider("Stop-Loss (%)", 1, 20, 5)
-take_profit_pct = st.sidebar.slider("Take-Profit (%)", 1, 50, 10)
-
-
-# --- Main Application Logic ---
-# Fetch and analyze data for the main list of ETFs
-data = get_historical_data(ETFS, backtest_period)
-
-if not data.empty:
-    momentum = calculate_momentum(data, lookback_days)
-
-    # CRITICAL FIX: Gracefully handle an empty momentum DataFrame.
-    # This prevents the "IndexError: single positional indexer is out-of-bounds"
-    if not momentum.empty:
-        latest_momentum = momentum.iloc[-1].sort_values(ascending=False)
-        momentum_df = pd.DataFrame({
-            'ETF': latest_momentum.index,
-            f'{lookback_days}-Day Momentum': latest_momentum.values * 100
-        })
-
-        # Display the main results
-        display_momentum_analysis(momentum_df, lookback_days, display_count)
-        top_etfs = latest_momentum.head(display_count).index
-        display_backtest_chart(data, top_etfs)
-    else:
-        st.warning("Not enough data to calculate momentum. Please adjust the lookback period or backtest period.")
-else:
-    st.error("No historical data available. Please check the selected period and try again.")
-
-
-# --- ETF Screener Section ---
-st.subheader("ETF Screener")
-st.markdown("Select ETFs below to include in your analysis:")
-selected_etfs = st.multiselect("Available ETFs", ETFS, default=ETFS[:10])
-
-if selected_etfs:
-    data_selected = get_historical_data(selected_etfs, backtest_period)
-    if not data_selected.empty:
-        momentum_selected = calculate_momentum(data_selected, lookback_days)
-        if not momentum_selected.empty:
-            latest_selected = momentum_selected.iloc[-1].sort_values(ascending=False)
-            st.write(f"Top {len(selected_etfs)} ETFs by Momentum:")
-            st.dataframe(latest_selected.to_frame(name='Momentum (%)').head(display_count))
-            display_backtest_chart(data_selected, latest_selected.head(len(selected_etfs)).index)
+        # Check if the returned DataFrame has a MultiIndex (for multiple tickers)
+        if isinstance(data.columns, pd.MultiIndex):
+            # If so, select the 'Adj Close' column for all tickers
+            data = data['Adj Close']
         else:
-            st.warning("Not enough data to calculate momentum for selected ETFs. Please reduce the lookback period.")
+            # If not, it's a single ticker, so we access 'Adj Close' directly
+            # This is a fallback for when the multi-ticker download fails to find data
+            data = data['Adj Close']
+            data = pd.DataFrame(data)
+            
+        # Drop any rows with NaN values that might have been caused by missing data
+        data.dropna(inplace=True)
+
+    except (KeyError, IndexError) as e:
+        # Handle cases where the 'Adj Close' column is missing or data is not found
+        st.error(f"Error fetching data for one or more tickers. The data might not be available. Details: {e}")
+        return pd.DataFrame()
+
+    return data
+
+
+# --- Streamlit UI Components ---
+st.header("Configuration")
+
+# User input for the number of months for the momentum calculation
+months_momentum = st.slider("Number of months for momentum calculation:", min_value=1, max_value=12, value=6, step=1)
+
+# User input for the list of tickers
+ticker_string = st.text_area("Enter stock tickers (e.g., AAPL, GOOG, MSFT, TSLA):", "AAPL, GOOG, MSFT, TSLA")
+
+# Check if the ticker input is empty
+if ticker_string:
+    # Convert the input string into a list of tickers
+    tickers_list = [t.strip().upper() for t in ticker_string.split(',')]
+else:
+    st.warning("Please enter at least one stock ticker symbol.")
+    tickers_list = []
+
+# Button to trigger the analysis
+if st.button("Run Momentum Analysis"):
+    if not tickers_list:
+        st.warning("Please enter valid ticker symbols before running the analysis.")
     else:
-        st.error("No historical data available for the selected ETFs.")
+        # Calculate the period string for yfinance
+        period_str = f"{months_momentum * 4}mo"  # Use a longer period to ensure enough data
 
-# --- Live Trading Section (Future Feature) ---
-# This section is currently commented out for safety and to focus on the core functionality.
-# You can uncomment and use it with your Alpaca API credentials.
-# Note: You will need to install the Alpaca SDK: `pip install alpaca-trade-api`
-#
-# if use_trading:
-#     st.subheader("📤 Place Trades via Alpaca")
-#     if not api_key or not api_secret:
-#         st.warning("Please enter your Alpaca API keys in the sidebar to enable trading.")
-#     else:
-#         try:
-#             alpaca = REST(api_key, api_secret, base_url=endpoint_url)
-#             st.success("Connected to Alpaca Paper Trading")
-#
-#             allocation = 10000
-#             per_trade = allocation / display_count
-#             current_prices = yf.download(list(top_etfs), period="1d")['Adj Close'].iloc[-1]
-#
-#             for etf in top_etfs:
-#                 shares = int(per_trade / current_prices[etf])
-#                 if shares > 0:
-#                     alpaca.submit_order(
-#                         symbol=etf,
-#                         qty=shares,
-#                         side='buy',
-#                         type='market',
-#                         time_in_force='gtc',
-#                         order_class='bracket',
-#                         stop_loss={"stop_price": round(current_prices[etf] * (1 - stop_loss_pct / 100), 2)},
-#                         take_profit={"limit_price": round(current_prices[etf] * (1 + take_profit_pct / 100), 2)}
-#                     )
-#                     st.write(f"✅ Buy order with bracket placed: {shares} shares of {etf}")
-#
-#         except Exception as e:
-#             st.error(f"Trading error: {e}")
+        # Use a progress bar for visual feedback
+        progress_bar = st.progress(0)
+        progress_bar.progress(20)
 
+        # Get the historical data
+        with st.spinner("Fetching data..."):
+            historical_data = get_momentum_data(tickers_list, period_str, progress_bar)
+        
+        progress_bar.progress(50)
 
-# --- Footer ---
-st.caption(f"Last Updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        if not historical_data.empty:
+            # Calculate the number of days in the specified period
+            days_in_period = months_momentum * 21  # Approx 21 trading days per month
+            
+            # Check if there's enough data for the calculation
+            if len(historical_data) >= days_in_period:
+                # Calculate the momentum
+                momentum_data = historical_data.pct_change(days_in_period).iloc[-1].sort_values(ascending=False)
+                
+                progress_bar.progress(80)
+
+                st.subheader(f"Momentum Scores (Last {months_momentum} Months)")
+                # Convert the momentum series to a DataFrame for display
+                momentum_df = momentum_data.to_frame(name="Momentum Score")
+                st.dataframe(momentum_df.style.format({"Momentum Score": "{:.2%}"}), use_container_width=True)
+                
+                # --- Trading Signal and Recommendation ---
+                st.subheader("Trading Signal")
+                
+                # Top 3 based on momentum
+                top_performers = momentum_data.head(3)
+                
+                # Plot the top performers using a line chart
+                st.subheader("Top Performers Chart")
+                st.line_chart(historical_data[top_performers.index])
+
+                st.success(
+                    f"Based on the last {months_momentum} months, the top performing stocks are: "
+                    + ", ".join([f"**{ticker}**" for ticker in top_performers.index])
+                    + ". These stocks show strong momentum."
+                )
+
+                progress_bar.progress(100)
+                st.balloons()
+            else:
+                st.warning(f"Not enough historical data to calculate momentum for {months_momentum} months. Please try a shorter period or different tickers.")
+                progress_bar.empty()
+        else:
+            # The error message is already handled in the get_momentum_data function
+            progress_bar.empty()
