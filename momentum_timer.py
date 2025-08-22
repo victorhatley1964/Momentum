@@ -9,6 +9,22 @@ import numpy as np
 st.title("Momentum Timer")
 st.markdown("This application calculates momentum for a list of stocks to help with trading decisions.")
 
+# --- Explanation Section ---
+st.subheader("How the Momentum Score is Calculated")
+st.markdown(
+    """
+    The momentum score is a measure of a stock's recent performance. It is calculated as the
+    **percentage change** in the stock's closing price over the number of months you select.
+    
+    * **Positive Momentum:** A positive score indicates the stock's price has been
+        increasing, showing upward momentum.
+    * **Negative Momentum:** A negative score indicates the stock's price has been
+        decreasing, showing downward momentum.
+
+    Stocks with higher positive momentum scores are often considered to be in a strong upward trend.
+    """
+)
+
 def get_momentum_data(tickers, period, progress_bar):
     """
     Fetches historical stock data for a list of tickers, handling potential errors.
@@ -87,29 +103,33 @@ if st.button("Run Momentum Analysis"):
         progress_bar.progress(50)
 
         if not historical_data.empty:
-            # Calculate the number of days in the specified period
+            # --- Momentum Analysis Section ---
             days_in_period = months_momentum * 21  # Approx 21 trading days per month
             
-            # Check if there's enough data for the calculation
             if len(historical_data) >= days_in_period:
-                # Calculate the momentum (percentage change over the period)
                 momentum_data = historical_data.pct_change(days_in_period).iloc[-1].sort_values(ascending=False)
                 
-                progress_bar.progress(80)
-
                 st.subheader(f"Momentum Scores (Last {months_momentum} Months)")
-                # Convert the momentum series to a DataFrame for display
                 momentum_df = momentum_data.to_frame(name="Momentum Score")
                 st.dataframe(momentum_df.style.format({"Momentum Score": "{:.2%}"}), use_container_width=True)
+
+                # --- Risk Analysis (Volatility) Section ---
+                st.subheader("Risk Analysis (Volatility)")
+                daily_returns = historical_data.pct_change()
+                # Annualize the daily volatility by multiplying by the square root of 252 trading days
+                volatility = daily_returns.std() * np.sqrt(252)
+                volatility = volatility.sort_values(ascending=False)
+
+                volatility_df = volatility.to_frame(name="Annualized Volatility")
+                st.dataframe(volatility_df.style.format({"Annualized Volatility": "{:.2%}"}), use_container_width=True)
                 
                 # --- Trading Signal and Recommendation ---
                 st.subheader("Trading Signal")
                 
-                # Top 3 based on momentum
-                top_performers = momentum_data.head(3)
+                num_tickers_to_chart = min(10, len(momentum_data))
+                top_performers = momentum_data.head(num_tickers_to_chart)
                 
-                # Plot the top performers using a line chart
-                st.subheader("Top Performers Chart")
+                st.subheader(f"Top {num_tickers_to_chart} Performers Chart")
                 st.line_chart(historical_data[top_performers.index])
 
                 st.success(
@@ -124,6 +144,5 @@ if st.button("Run Momentum Analysis"):
                 st.warning(f"Not enough historical data to calculate momentum for {months_momentum} months. Please try a shorter period or different tickers.")
                 progress_bar.empty()
         else:
-            # The error message is already handled in the get_momentum_data function
             progress_bar.empty()
 
