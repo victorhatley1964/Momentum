@@ -19,28 +19,31 @@ def get_momentum_data(tickers, period, progress_bar):
         progress_bar: A Streamlit progress bar object for visual feedback.
 
     Returns:
-        pandas.DataFrame: A DataFrame containing the 'Adj Close' prices for all tickers,
+        pandas.DataFrame: A DataFrame containing the 'Close' prices for all tickers,
                           or an empty DataFrame if data fetching fails.
     """
     try:
-        # Download data for the list of tickers
+        # Download data for the list of tickers.
+        # The new default auto_adjust=True means we will use the 'Close' price,
+        # which is already adjusted for dividends and splits.
         data = yf.download(tickers, period=period, progress=False)
 
         # Check if the returned DataFrame has a MultiIndex (for multiple tickers)
         if isinstance(data.columns, pd.MultiIndex):
-            # If so, select the 'Adj Close' column for all tickers
-            data = data['Adj Close']
+            # If so, select the 'Close' column for all tickers
+            data = data['Close']
         else:
-            # If not, it's a single ticker, so we access 'Adj Close' directly
-            # This is a fallback for when the multi-ticker download fails to find data
-            data = data['Adj Close']
+            # If not, it's a single ticker, so we access 'Close' directly
+            # This is a fallback for when the multi-ticker download fails
+            data = data['Close']
             data = pd.DataFrame(data)
             
         # Drop any rows with NaN values that might have been caused by missing data
         data.dropna(inplace=True)
 
     except (KeyError, IndexError) as e:
-        # Handle cases where the 'Adj Close' column is missing or data is not found
+        # Handle cases where the 'Close' column is missing or data is not found.
+        # This will happen if yfinance couldn't find data for a ticker.
         st.error(f"Error fetching data for one or more tickers. The data might not be available. Details: {e}")
         return pd.DataFrame()
 
@@ -70,7 +73,8 @@ if st.button("Run Momentum Analysis"):
         st.warning("Please enter valid ticker symbols before running the analysis.")
     else:
         # Calculate the period string for yfinance
-        period_str = f"{months_momentum * 4}mo"  # Use a longer period to ensure enough data
+        # Use a slightly longer period to ensure enough data
+        period_str = f"{months_momentum * 4}mo"
 
         # Use a progress bar for visual feedback
         progress_bar = st.progress(0)
@@ -88,7 +92,7 @@ if st.button("Run Momentum Analysis"):
             
             # Check if there's enough data for the calculation
             if len(historical_data) >= days_in_period:
-                # Calculate the momentum
+                # Calculate the momentum (percentage change over the period)
                 momentum_data = historical_data.pct_change(days_in_period).iloc[-1].sort_values(ascending=False)
                 
                 progress_bar.progress(80)
@@ -122,3 +126,4 @@ if st.button("Run Momentum Analysis"):
         else:
             # The error message is already handled in the get_momentum_data function
             progress_bar.empty()
+
